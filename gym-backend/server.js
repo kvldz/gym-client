@@ -26,11 +26,14 @@ app.use(express.json());
 // 2. NODEMAILER EMAIL TRANSPORTER CONFIG
 // ==========================================
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
-  }
+  },
+  family: 4  // force IPv4 - ito ang key fix
 });
 
 async function sendOtpEmail(email, otpCode) {
