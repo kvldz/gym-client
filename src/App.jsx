@@ -13,7 +13,7 @@ import AuthModal from "./AuthModal";
 
 // --- GLOBAL CONSTANTS ---
 const NEON_LIME = "#D2FF00";
-const API_BASE_URL = "http://localhost:5001";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5001";
 const GOOGLE_CLIENT_ID = "274945231229-r93q5jcgrmn7mtkrrvio87diuhnlfp8d.apps.googleusercontent.com";
 
 // 🏷️ CATEGORIES CONFIGURATION
