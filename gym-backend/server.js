@@ -170,7 +170,7 @@ app.post('/api/products', async (req, res) => {
 
     const [result] = await connection.query(
       `INSERT INTO products 
-       (name, price, category, subcategory, stock, image_url, description, full_description, warranty, shipping_info) 
+       (name, price, category, subcategory, stock, image_url, short_description, full_description, warranty_info, shipping_info) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name, 
