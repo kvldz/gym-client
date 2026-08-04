@@ -210,6 +210,121 @@ if (specs && specs.length > 0) {
 });
 
 // ==========================================
+// 5.2. UPDATE EXISTING PRODUCT (PUT)
+// ==========================================
+app.put('/api/products/:id', async (req, res) => {
+  const { id } = req.params;
+  const {
+    name,
+    price,
+    category,
+    subcategory,
+    stock,
+    image_url,
+    description,
+    full_description,
+    warranty,
+    shipping_info,
+    specs = []
+  } = req.body;
+
+  if (!name || !price || !category) {
+    return res.status(400).json({ message: 'Product Name, Price, and Category are required.' });
+  }
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    const [result] = await connection.query(
+      `UPDATE products SET 
+        name = ?, price = ?, category = ?, subcategory = ?, stock = ?, 
+        image_url = ?, short_description = ?, full_description = ?, 
+        warranty_info = ?, shipping_info = ?
+       WHERE product_id = ?`,
+      [
+        name,
+        parseFloat(price),
+        category,
+        subcategory || '',
+        parseInt(stock) || 0,
+        image_url || 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=800',
+        description || '',
+        full_description || description || '',
+        warranty || '1 Year Commercial Warranty',
+        shipping_info || 'Ships within 24-48 hours',
+        id
+      ]
+    );
+
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      connection.release();
+      return res.status(404).json({ message: 'Product not found.' });
+    }
+
+    // Replace specs: delete old ones, insert new ones
+    await connection.query('DELETE FROM product_specs WHERE product_id = ?', [id]);
+
+    if (specs && specs.length > 0) {
+      for (let spec of specs) {
+        if (spec.label && spec.value) {
+          await connection.query(
+            'INSERT INTO product_specs (product_id, spec_label, spec_value) VALUES (?, ?, ?)',
+            [id, spec.label.trim(), spec.value.trim()]
+          );
+        }
+      }
+    }
+
+    await connection.commit();
+    console.log('✅ Product Updated:', id, name);
+    res.json({ message: 'Product successfully updated!', product_id: id });
+
+  } catch (err) {
+    await connection.rollback();
+    console.error('❌ Update Product Error:', err);
+    res.status(500).json({ message: 'Failed to update product.', details: err.message });
+  } finally {
+    connection.release();
+  }
+});
+
+// ==========================================
+// 5.3. DELETE PRODUCT
+// ==========================================
+app.delete('/api/products/:id', async (req, res) => {
+  const { id } = req.params;
+
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // Delete specs first (avoid FK constraint errors kung wala foreign key cascade)
+    await connection.query('DELETE FROM product_specs WHERE product_id = ?', [id]);
+
+    const [result] = await connection.query('DELETE FROM products WHERE product_id = ?', [id]);
+
+    if (result.affectedRows === 0) {
+      await connection.rollback();
+      connection.release();
+      return res.status(404).json({ message: 'Product not found.' });
+    }
+
+    await connection.commit();
+    console.log('✅ Product Deleted:', id);
+    res.json({ message: 'Product successfully deleted!' });
+
+  } catch (err) {
+    await connection.rollback();
+    console.error('❌ Delete Product Error:', err);
+    res.status(500).json({ message: 'Failed to delete product.', details: err.message });
+  } finally {
+    connection.release();
+  }
+});
+
+// ==========================================
 // 6. USER REGISTER (UPDATED FULL DETAILS)
 // ==========================================
 // ==========================================
