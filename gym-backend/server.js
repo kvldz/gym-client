@@ -188,20 +188,10 @@ app.post('/api/products', async (req, res) => {
 
     const productId = result.insertId;
 
-    if (images && images.length > 0) {
-      for (let img of images) {
-        if (img && img.trim()) {
-          await connection.query('INSERT INTO product_images (product_id, image_url) VALUES (?, ?)', [productId, img.trim()]);
-        }
-      }
-    } else if (image_url) {
-      await connection.query('INSERT INTO product_images (product_id, image_url) VALUES (?, ?)', [productId, image_url]);
-    }
-
-    if (specs && specs.length > 0) {
+if (specs && specs.length > 0) {
       for (let spec of specs) {
         if (spec.label && spec.value) {
-          await connection.query('INSERT INTO product_specs (product_id, label, value) VALUES (?, ?, ?)', [productId, spec.label.trim(), spec.value.trim()]);
+          await connection.query('INSERT INTO product_specs (product_id, spec_label, spec_value) VALUES (?, ?, ?)', [productId, spec.label.trim(), spec.value.trim()]);
         }
       }
     }
