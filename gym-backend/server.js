@@ -1,12 +1,9 @@
-const dns = require('dns');
-dns.setDefaultResultOrder('ipv4first');
 const express = require('express');
 const cors = require('cors');
 const db = require('./db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const app = express();
@@ -18,8 +15,8 @@ console.log('==================================================');
 console.log('🔧 STARTUP CHECK - Environment Variables');
 console.log('==================================================');
 console.log('PORT:', process.env.PORT || '(not set, defaulting to 5001)');
-console.log('EMAIL_USER:', process.env.EMAIL_USER ? `SET (${process.env.EMAIL_USER})` : '❌ NOT SET');
-console.log('EMAIL_PASS:', process.env.EMAIL_PASS ? `SET (length: ${process.env.EMAIL_PASS.length})` : '❌ NOT SET');
+console.log('RESEND_API_KEY:', process.env.RESEND_API_KEY ? `SET (length: ${process.env.RESEND_API_KEY.length})` : '❌ NOT SET');
+console.log('EMAIL_FROM:', process.env.EMAIL_FROM || '(not set, defaulting to onboarding@resend.dev)');
 console.log('JWT_SECRET:', process.env.JWT_SECRET ? 'SET' : '⚠️ NOT SET (using fallback)');
 console.log('==================================================');
 
@@ -43,55 +40,57 @@ app.use((req, res, next) => {
 });
 
 // ==========================================
-// 2. NODEMAILER EMAIL TRANSPORTER CONFIG
+// 2. RESEND EMAIL (HTTP API - avoids Railway's SMTP/IPv6 ENETUNREACH issue)
 // ==========================================
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // STARTTLS, hindi implicit TLS
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  },
-  family: 4
-});
-
-// Verify SMTP connection on startup so we know immediately if email is broken,
-// instead of waiting for a user to trigger it via login/register
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ SMTP TRANSPORTER VERIFY FAILED:', error.message);
-    console.error('Full SMTP error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
-  } else {
-    console.log('✅ SMTP Transporter is ready to send emails');
-  }
-});
+// Gumagamit ng Resend HTTP API imbes na SMTP (nodemailer) dahil naka-block
+// ang raw SMTP socket connections (port 465/587) sa Railway network.
+// Kailangan i-set ang RESEND_API_KEY env var sa Railway.
+// Kung wala pang verified custom domain sa Resend, gamitin muna ang
+// "onboarding@resend.dev" bilang sender (default fallback sa baba) -
+// pero limitado lang ito, makakapag-send lang papunta sa email na
+// ginamit mo sa pag-signup sa Resend hangga't hindi ka pa nag-verify ng domain.
 
 async function sendOtpEmail(email, otpCode) {
   console.log(`📧 [sendOtpEmail] Attempting to send OTP to: ${email}`);
-  const mailOptions = {
-    from: '"Gym App Security" <no-reply@gymapp.com>',
-    to: email,
-    subject: 'Your Login Verification Code',
-    html: `
-      <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
-        <h2 style="color: #1f2937;">Gym App Security Code</h2>
-        <p style="color: #4b5563;">Your 6-digit verification code is:</p>
-        <h1 style="color: #2563eb; letter-spacing: 5px; font-size: 32px;">${otpCode}</h1>
-        <p style="color: #6b7280; font-size: 14px;">This code will expire in <strong>5 minutes</strong>.</p>
-      </div>
-    `
-  };
+
+  const fromAddress = process.env.EMAIL_FROM || 'Gym App Security <onboarding@resend.dev>';
+
   try {
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ [sendOtpEmail] Email sent successfully. Message ID: ${info.messageId}`);
-    return info;
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: [email],
+        subject: 'Your Login Verification Code',
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px;">
+            <h2 style="color: #1f2937;">Gym App Security Code</h2>
+            <p style="color: #4b5563;">Your 6-digit verification code is:</p>
+            <h1 style="color: #2563eb; letter-spacing: 5px; font-size: 32px;">${otpCode}</h1>
+            <p style="color: #6b7280; font-size: 14px;">This code will expire in <strong>5 minutes</strong>.</p>
+          </div>
+        `
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ [sendOtpEmail] Resend API returned an error.');
+      console.error('Status:', response.status);
+      console.error('Response body:', JSON.stringify(data));
+      throw new Error(data.message || `Resend API failed with status ${response.status}`);
+    }
+
+    console.log(`✅ [sendOtpEmail] Email sent successfully. Resend ID: ${data.id}`);
+    return data;
   } catch (err) {
     console.error('❌ [sendOtpEmail] FAILED to send email.');
-    console.error('Error name:', err.name);
     console.error('Error message:', err.message);
-    console.error('Error code:', err.code);
-    console.error('Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
     throw err; // re-throw so calling route still knows it failed
   }
 }
