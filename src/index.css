@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* 🟢 Tanggalin ang restriction ng Vite para maging Full Screen */
+html, body, #root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
