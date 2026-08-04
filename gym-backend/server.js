@@ -31,7 +31,7 @@ origin: ['http://localhost:5173', 'http://localhost:3000', 'https://precious-ill
 };
 
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Log every incoming request (method + path) - helpful to confirm requests are even reaching the server
 app.use((req, res, next) => {
