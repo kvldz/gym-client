@@ -81,7 +81,7 @@ app.get('/api/products', async (req, res) => {
       product.description = product.short_description || '';
       product.warranty = product.warranty_info || '';
 
-      const [specs] = await db.query('SELECT label, value FROM product_specs WHERE product_id = ?', [product.product_id]);
+const [specs] = await db.query('SELECT spec_label AS label, spec_value AS value FROM product_specs WHERE product_id = ?', [product.product_id]);
       product.specs = specs;
     }
 
