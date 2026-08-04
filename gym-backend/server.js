@@ -77,8 +77,9 @@ app.get('/api/products', async (req, res) => {
     const [products] = await db.query('SELECT * FROM products ORDER BY product_id DESC');
 
     for (let product of products) {
-      const [images] = await db.query('SELECT image_url FROM product_images WHERE product_id = ?', [product.product_id]);
-      product.images = images.length > 0 ? images.map(i => i.image_url) : [product.image_url];
+      product.images = product.image_url ? [product.image_url] : [];
+      product.description = product.short_description || '';
+      product.warranty = product.warranty_info || '';
 
       const [specs] = await db.query('SELECT label, value FROM product_specs WHERE product_id = ?', [product.product_id]);
       product.specs = specs;
