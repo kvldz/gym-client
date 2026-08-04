@@ -13,14 +13,14 @@ const app = express();
 // 1. CORS CONFIGURATION & PREFLIGHT HANDLING
 // ==========================================
 const corsOptions = {
-  origin: ['http://localhost:5173', 'http://localhost:3000', 'https://precious-illumination-production-eb7a.up.railway.app'],
+origin: ['http://localhost:5173', 'http://localhost:3000', 'https://precious-illumination-production-eb7a.up.railway.app'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 };
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json());
 
 // ==========================================
 // 2. NODEMAILER EMAIL TRANSPORTER CONFIG
@@ -65,7 +65,6 @@ app.get('/api/users', async (req, res) => {
     const [users] = await db.query('SELECT user_id, full_name, email, phone, gender, address, created_at FROM users');
     res.json(users);
   } catch (err) {
-    console.error('GET USERS ERROR:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -82,13 +81,12 @@ app.get('/api/products', async (req, res) => {
       product.description = product.short_description || '';
       product.warranty = product.warranty_info || '';
 
-      const [specs] = await db.query('SELECT spec_label AS label, spec_value AS value FROM product_specs WHERE product_id = ?', [product.product_id]);
+const [specs] = await db.query('SELECT spec_label AS label, spec_value AS value FROM product_specs WHERE product_id = ?', [product.product_id]);
       product.specs = specs;
     }
 
     res.json(products);
   } catch (err) {
-    console.error('GET PRODUCTS ERROR:', err);
     res.status(500).json({ 
       error: "Product fetching error.", 
       details: err.message 
@@ -111,6 +109,7 @@ app.post('/api/products', async (req, res) => {
     full_description,
     warranty,
     shipping_info,
+    images = [],
     specs = []
   } = req.body;
 
@@ -124,7 +123,7 @@ app.post('/api/products', async (req, res) => {
 
     const [result] = await connection.query(
       `INSERT INTO products 
-       (name, price, category, subcategory, stock, image_url, short_description, full_description, warranty_info, shipping_info) 
+       (name, price, category, subcategory, stock, image_url, description, full_description, warranty, shipping_info) 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name, 
@@ -142,10 +141,20 @@ app.post('/api/products', async (req, res) => {
 
     const productId = result.insertId;
 
+    if (images && images.length > 0) {
+      for (let img of images) {
+        if (img && img.trim()) {
+          await connection.query('INSERT INTO product_images (product_id, image_url) VALUES (?, ?)', [productId, img.trim()]);
+        }
+      }
+    } else if (image_url) {
+      await connection.query('INSERT INTO product_images (product_id, image_url) VALUES (?, ?)', [productId, image_url]);
+    }
+
     if (specs && specs.length > 0) {
       for (let spec of specs) {
         if (spec.label && spec.value) {
-          await connection.query('INSERT INTO product_specs (product_id, spec_label, spec_value) VALUES (?, ?, ?)', [productId, spec.label.trim(), spec.value.trim()]);
+          await connection.query('INSERT INTO product_specs (product_id, label, value) VALUES (?, ?, ?)', [productId, spec.label.trim(), spec.value.trim()]);
         }
       }
     }
@@ -164,7 +173,10 @@ app.post('/api/products', async (req, res) => {
 });
 
 // ==========================================
-// 6. USER REGISTER
+// 6. USER REGISTER (UPDATED FULL DETAILS)
+// ==========================================
+// ==========================================
+// 6. USER REGISTER (UPDATED COLUMN NAMES)
 // ==========================================
 app.post('/api/auth/register', async (req, res) => {
   const { name, email, password, phone, gender, address } = req.body;
@@ -176,6 +188,7 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     
+    // Ginamit ang phone_number para sa database match
     const [result] = await db.query(
       'INSERT INTO users (email, full_name, password_hash, phone_number, gender, address) VALUES (?, ?, ?, ?, ?, ?)',
       [
@@ -208,7 +221,7 @@ app.post('/api/auth/register', async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('REGISTRATION ERROR:', err);
+    console.error('Registration Error:', err);
     res.status(400).json({ message: 'Registration failed. Email may already exist.', details: err.message });
   }
 });
@@ -283,7 +296,6 @@ app.post('/api/auth/login', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('LOGIN ERROR:', err);
     res.status(500).json({ error: 'Login failed on server.', details: err.message });
   }
 });
@@ -351,7 +363,73 @@ app.post('/api/auth/verify-otp', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('VERIFY OTP ERROR:', err);
+    res.status(500).json({ message: 'Failed to verify OTP.', details: err.message });
+  }
+});
+
+// ==========================================
+// 8. VERIFY OTP ROUTE
+// ==========================================
+app.post('/api/auth/verify-otp', async (req, res) => {
+  const { userId, otpCode, rememberDevice } = req.body;
+
+  if (!userId || !otpCode) {
+    return res.status(400).json({ message: 'User ID and OTP Code are required.' });
+  }
+
+  try {
+    const [otps] = await db.query(
+      'SELECT * FROM user_otps WHERE user_id = ? AND otp_code = ?',
+      [userId, String(otpCode).trim()]
+    );
+
+    if (otps.length === 0) {
+      return res.status(400).json({ message: 'Invalid OTP code.' });
+    }
+
+    const otpRecord = otps[0];
+
+    if (new Date(otpRecord.expires_at) < new Date()) {
+      return res.status(400).json({ message: 'OTP Code has expired. Please request a new one.' });
+    }
+
+    await db.query('DELETE FROM user_otps WHERE user_id = ?', [userId]);
+
+    const [users] = await db.query('SELECT * FROM users WHERE user_id = ?', [userId]);
+    if (users.length === 0) {
+      return res.status(400).json({ message: 'User not found.' });
+    }
+    const user = users[0];
+
+    let newDeviceToken = null;
+    if (rememberDevice === true || rememberDevice === "true") {
+      newDeviceToken = crypto.randomBytes(32).toString('hex');
+      await db.query(
+        'INSERT INTO remembered_devices (user_id, device_token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))',
+        [userId, newDeviceToken]
+      );
+    }
+
+    const token = jwt.sign(
+      { user_id: userId, email: user.email },
+      process.env.JWT_SECRET || 'gym_app_secret_key',
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      token,
+      deviceToken: newDeviceToken,
+      user: { 
+        id: userId, 
+        name: user.full_name, 
+        email: user.email,
+        phone: user.phone || '',
+        gender: user.gender || '',
+        address: user.address || ''
+      }
+    });
+
+  } catch (err) {
     res.status(500).json({ message: 'Failed to verify OTP.', details: err.message });
   }
 });
@@ -439,7 +517,6 @@ app.post('/api/auth/google', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('GOOGLE AUTH ERROR:', err);
     res.status(500).json({ message: 'Google Authentication failed on server.', details: err.message });
   }
 });
@@ -452,3 +529,5 @@ const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
+
+
