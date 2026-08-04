@@ -325,10 +325,7 @@ app.delete('/api/products/:id', async (req, res) => {
 });
 
 // ==========================================
-// 6. USER REGISTER (UPDATED FULL DETAILS)
-// ==========================================
-// ==========================================
-// 6. USER REGISTER (UPDATED COLUMN NAMES)
+// 6. USER REGISTER (WITH OTP VERIFICATION)
 // ==========================================
 app.post('/api/auth/register', async (req, res) => {
   const { name, email, password, phone, gender, address } = req.body;
@@ -338,46 +335,53 @@ app.post('/api/auth/register', async (req, res) => {
   }
 
   try {
+    // Check kung existing na yung email bago mag-insert
+    const [existing] = await db.query('SELECT user_id FROM users WHERE email = ?', [email]);
+    if (existing.length > 0) {
+      return res.status(400).json({ message: 'Email already registered.' });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    
-    // Ginamit ang phone_number para sa database match
+
     const [result] = await db.query(
       'INSERT INTO users (email, full_name, password_hash, phone_number, gender, address) VALUES (?, ?, ?, ?, ?, ?)',
       [
-        email, 
-        name, 
-        hashedPassword, 
-        phone || null, 
-        gender || 'Male', 
+        email,
+        name,
+        hashedPassword,
+        phone || null,
+        gender || 'Male',
         address || null
       ]
     );
 
     const userId = result.insertId;
 
-    const token = jwt.sign(
-      { user_id: userId, email },
-      process.env.JWT_SECRET || 'gym_app_secret_key',
-      { expiresIn: '7d' }
+    // Same OTP logic as login — hindi agad mag-iisyu ng token
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    await db.query('DELETE FROM user_otps WHERE user_id = ?', [userId]);
+    await db.query(
+      'INSERT INTO user_otps (user_id, otp_code, expires_at) VALUES (?, ?, ?)',
+      [userId, otpCode, expiresAt]
     );
+    console.log('📝 [REGISTER] OTP generated and stored for user_id:', userId);
+
+    await sendOtpEmail(email, otpCode);
+    console.log('📝 [REGISTER] OTP email flow completed for:', email);
 
     res.json({
-      token,
-      user: { 
-        id: userId, 
-        name: name, 
-        email: email,
-        phone: phone || '',
-        gender: gender || '',
-        address: address || ''
-      }
+      requiresOtp: true,
+      userId: userId,
+      message: 'Verification code sent to your email.'
     });
+
   } catch (err) {
     console.error('❌ Registration Error:', err.message);
-    res.status(400).json({ message: 'Registration failed. Email may already exist.', details: err.message });
+    res.status(400).json({ message: 'Registration failed.', details: err.message });
   }
 });
-
 // ==========================================
 // 7. USER LOGIN
 // ==========================================
