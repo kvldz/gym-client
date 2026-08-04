@@ -10,6 +10,18 @@ require('dotenv').config();
 const app = express();
 
 // ==========================================
+// 0. STARTUP ENV VAR CHECK (helps catch missing Railway vars immediately)
+// ==========================================
+console.log('==================================================');
+console.log('🔧 STARTUP CHECK - Environment Variables');
+console.log('==================================================');
+console.log('PORT:', process.env.PORT || '(not set, defaulting to 5001)');
+console.log('EMAIL_USER:', process.env.EMAIL_USER ? `SET (${process.env.EMAIL_USER})` : '❌ NOT SET');
+console.log('EMAIL_PASS:', process.env.EMAIL_PASS ? `SET (length: ${process.env.EMAIL_PASS.length})` : '❌ NOT SET');
+console.log('JWT_SECRET:', process.env.JWT_SECRET ? 'SET' : '⚠️ NOT SET (using fallback)');
+console.log('==================================================');
+
+// ==========================================
 // 1. CORS CONFIGURATION & PREFLIGHT HANDLING
 // ==========================================
 const corsOptions = {
@@ -21,6 +33,12 @@ origin: ['http://localhost:5173', 'http://localhost:3000', 'https://precious-ill
 
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// Log every incoming request (method + path) - helpful to confirm requests are even reaching the server
+app.use((req, res, next) => {
+  console.log(`📥 [${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
 
 // ==========================================
 // 2. NODEMAILER EMAIL TRANSPORTER CONFIG
@@ -36,7 +54,19 @@ const transporter = nodemailer.createTransport({
   family: 4
 });
 
+// Verify SMTP connection on startup so we know immediately if email is broken,
+// instead of waiting for a user to trigger it via login/register
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ SMTP TRANSPORTER VERIFY FAILED:', error.message);
+    console.error('Full SMTP error object:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+  } else {
+    console.log('✅ SMTP Transporter is ready to send emails');
+  }
+});
+
 async function sendOtpEmail(email, otpCode) {
+  console.log(`📧 [sendOtpEmail] Attempting to send OTP to: ${email}`);
   const mailOptions = {
     from: '"Gym App Security" <no-reply@gymapp.com>',
     to: email,
@@ -50,7 +80,18 @@ async function sendOtpEmail(email, otpCode) {
       </div>
     `
   };
-  await transporter.sendMail(mailOptions);
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ [sendOtpEmail] Email sent successfully. Message ID: ${info.messageId}`);
+    return info;
+  } catch (err) {
+    console.error('❌ [sendOtpEmail] FAILED to send email.');
+    console.error('Error name:', err.name);
+    console.error('Error message:', err.message);
+    console.error('Error code:', err.code);
+    console.error('Full error:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
+    throw err; // re-throw so calling route still knows it failed
+  }
 }
 
 // ==========================================
@@ -68,6 +109,7 @@ app.get('/api/users', async (req, res) => {
     const [users] = await db.query('SELECT user_id, full_name, email, phone, gender, address, created_at FROM users');
     res.json(users);
   } catch (err) {
+    console.error('❌ [GET /api/users] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -90,6 +132,7 @@ const [specs] = await db.query('SELECT spec_label AS label, spec_value AS value 
 
     res.json(products);
   } catch (err) {
+    console.error('❌ [GET /api/products] Error:', err.message);
     res.status(500).json({ 
       error: "Product fetching error.", 
       details: err.message 
@@ -224,7 +267,7 @@ app.post('/api/auth/register', async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Registration Error:', err);
+    console.error('❌ Registration Error:', err.message);
     res.status(400).json({ message: 'Registration failed. Email may already exist.', details: err.message });
   }
 });
@@ -234,6 +277,7 @@ app.post('/api/auth/register', async (req, res) => {
 // ==========================================
 app.post('/api/auth/login', async (req, res) => {
   const { email, password, deviceToken } = req.body;
+  console.log('🔑 [LOGIN] Attempt for email:', email);
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and Password are required.' });
@@ -242,6 +286,7 @@ app.post('/api/auth/login', async (req, res) => {
   try {
     const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
     if (users.length === 0) {
+      console.log('🔑 [LOGIN] User not found:', email);
       return res.status(400).json({ message: 'User not found.' });
     }
 
@@ -250,6 +295,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
+      console.log('🔑 [LOGIN] Invalid password for:', email);
       return res.status(400).json({ message: 'Invalid credentials.' });
     }
 
@@ -260,6 +306,7 @@ app.post('/api/auth/login', async (req, res) => {
       );
 
       if (devices.length > 0) {
+        console.log('🔑 [LOGIN] Remembered device found, skipping OTP for:', email);
         const token = jwt.sign(
           { user_id: userId, email: user.email },
           process.env.JWT_SECRET || 'gym_app_secret_key',
@@ -289,8 +336,10 @@ app.post('/api/auth/login', async (req, res) => {
       'INSERT INTO user_otps (user_id, otp_code, expires_at) VALUES (?, ?, ?)',
       [userId, otpCode, expiresAt]
     );
+    console.log('🔑 [LOGIN] OTP generated and stored for user_id:', userId);
 
     await sendOtpEmail(user.email, otpCode);
+    console.log('🔑 [LOGIN] OTP email flow completed for:', email);
 
     res.json({
       requiresOtp: true,
@@ -299,6 +348,8 @@ app.post('/api/auth/login', async (req, res) => {
     });
 
   } catch (err) {
+    console.error('❌ [LOGIN] Error:', err.message);
+    console.error('Full login error:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
     res.status(500).json({ error: 'Login failed on server.', details: err.message });
   }
 });
@@ -308,6 +359,7 @@ app.post('/api/auth/login', async (req, res) => {
 // ==========================================
 app.post('/api/auth/verify-otp', async (req, res) => {
   const { userId, otpCode, rememberDevice } = req.body;
+  console.log('🔢 [VERIFY-OTP] Attempt for userId:', userId);
 
   if (!userId || !otpCode) {
     return res.status(400).json({ message: 'User ID and OTP Code are required.' });
@@ -320,12 +372,14 @@ app.post('/api/auth/verify-otp', async (req, res) => {
     );
 
     if (otps.length === 0) {
+      console.log('🔢 [VERIFY-OTP] Invalid OTP for userId:', userId);
       return res.status(400).json({ message: 'Invalid OTP code.' });
     }
 
     const otpRecord = otps[0];
 
     if (new Date(otpRecord.expires_at) < new Date()) {
+      console.log('🔢 [VERIFY-OTP] Expired OTP for userId:', userId);
       return res.status(400).json({ message: 'OTP Code has expired. Please request a new one.' });
     }
 
@@ -333,6 +387,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
 
     const [users] = await db.query('SELECT * FROM users WHERE user_id = ?', [userId]);
     if (users.length === 0) {
+      console.log('🔢 [VERIFY-OTP] User not found for userId:', userId);
       return res.status(400).json({ message: 'User not found.' });
     }
     const user = users[0];
@@ -344,6 +399,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
         'INSERT INTO remembered_devices (user_id, device_token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))',
         [userId, newDeviceToken]
       );
+      console.log('🔢 [VERIFY-OTP] Device remembered for userId:', userId);
     }
 
     const token = jwt.sign(
@@ -351,6 +407,8 @@ app.post('/api/auth/verify-otp', async (req, res) => {
       process.env.JWT_SECRET || 'gym_app_secret_key',
       { expiresIn: '7d' }
     );
+
+    console.log('✅ [VERIFY-OTP] Success for userId:', userId);
 
     res.json({
       token,
@@ -366,73 +424,7 @@ app.post('/api/auth/verify-otp', async (req, res) => {
     });
 
   } catch (err) {
-    res.status(500).json({ message: 'Failed to verify OTP.', details: err.message });
-  }
-});
-
-// ==========================================
-// 8. VERIFY OTP ROUTE
-// ==========================================
-app.post('/api/auth/verify-otp', async (req, res) => {
-  const { userId, otpCode, rememberDevice } = req.body;
-
-  if (!userId || !otpCode) {
-    return res.status(400).json({ message: 'User ID and OTP Code are required.' });
-  }
-
-  try {
-    const [otps] = await db.query(
-      'SELECT * FROM user_otps WHERE user_id = ? AND otp_code = ?',
-      [userId, String(otpCode).trim()]
-    );
-
-    if (otps.length === 0) {
-      return res.status(400).json({ message: 'Invalid OTP code.' });
-    }
-
-    const otpRecord = otps[0];
-
-    if (new Date(otpRecord.expires_at) < new Date()) {
-      return res.status(400).json({ message: 'OTP Code has expired. Please request a new one.' });
-    }
-
-    await db.query('DELETE FROM user_otps WHERE user_id = ?', [userId]);
-
-    const [users] = await db.query('SELECT * FROM users WHERE user_id = ?', [userId]);
-    if (users.length === 0) {
-      return res.status(400).json({ message: 'User not found.' });
-    }
-    const user = users[0];
-
-    let newDeviceToken = null;
-    if (rememberDevice === true || rememberDevice === "true") {
-      newDeviceToken = crypto.randomBytes(32).toString('hex');
-      await db.query(
-        'INSERT INTO remembered_devices (user_id, device_token, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))',
-        [userId, newDeviceToken]
-      );
-    }
-
-    const token = jwt.sign(
-      { user_id: userId, email: user.email },
-      process.env.JWT_SECRET || 'gym_app_secret_key',
-      { expiresIn: '7d' }
-    );
-
-    res.json({
-      token,
-      deviceToken: newDeviceToken,
-      user: { 
-        id: userId, 
-        name: user.full_name, 
-        email: user.email,
-        phone: user.phone || '',
-        gender: user.gender || '',
-        address: user.address || ''
-      }
-    });
-
-  } catch (err) {
+    console.error('❌ [VERIFY-OTP] Error:', err.message);
     res.status(500).json({ message: 'Failed to verify OTP.', details: err.message });
   }
 });
@@ -441,22 +433,34 @@ app.post('/api/auth/verify-otp', async (req, res) => {
 // 9. GOOGLE AUTHENTICATION
 // ==========================================
 app.post('/api/auth/google', async (req, res) => {
+  console.log('==================================================');
+  console.log('🟢 [GOOGLE AUTH] Route hit');
   const { token, deviceToken } = req.body;
+  console.log('🟢 [GOOGLE AUTH] Token received:', token ? `YES (length: ${token.length})` : 'NO TOKEN');
+  console.log('🟢 [GOOGLE AUTH] deviceToken present:', !!deviceToken);
 
   if (!token) {
+    console.log('🔴 [GOOGLE AUTH] No token provided, aborting.');
     return res.status(400).json({ message: 'Google Token is required.' });
   }
 
   try {
     const decodedToken = jwt.decode(token);
+    console.log('🟢 [GOOGLE AUTH] Decoded token payload:', decodedToken ? {
+      email: decodedToken.email,
+      name: decodedToken.name,
+      hasPicture: !!decodedToken.picture
+    } : 'FAILED TO DECODE');
 
     if (!decodedToken || !decodedToken.email) {
+      console.log('🔴 [GOOGLE AUTH] Invalid token payload, aborting.');
       return res.status(400).json({ message: 'Invalid Google Token payload.' });
     }
 
     const { email, name, picture } = decodedToken;
     const fullName = name || 'Google User';
 
+    console.log('🟢 [GOOGLE AUTH] Looking up user by email:', email);
     const [users] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
     let userId;
     let currentUser = null;
@@ -464,22 +468,27 @@ app.post('/api/auth/google', async (req, res) => {
     if (users.length > 0) {
       currentUser = users[0];
       userId = currentUser.user_id || currentUser.id;
+      console.log('🟢 [GOOGLE AUTH] Existing user found. userId:', userId);
     } else {
+      console.log('🟢 [GOOGLE AUTH] No existing user, creating new one for:', email);
       const dummyPasswordHash = await bcrypt.hash(`GOOGLE_AUTH_${Date.now()}`, 10);
       const [result] = await db.query(
         'INSERT INTO users (email, full_name, password_hash) VALUES (?, ?, ?)',
         [email, fullName, dummyPasswordHash]
       );
       userId = result.insertId;
+      console.log('✅ [GOOGLE AUTH] New user created. userId:', userId);
     }
 
     if (deviceToken) {
+      console.log('🟢 [GOOGLE AUTH] Checking remembered device for userId:', userId);
       const [devices] = await db.query(
         'SELECT * FROM remembered_devices WHERE user_id = ? AND device_token = ? AND expires_at > NOW()',
         [userId, deviceToken]
       );
 
       if (devices.length > 0) {
+        console.log('✅ [GOOGLE AUTH] Remembered device valid, skipping OTP.');
         const sessionToken = jwt.sign(
           { user_id: userId, email },
           process.env.JWT_SECRET || 'gym_app_secret_key',
@@ -500,26 +509,41 @@ app.post('/api/auth/google', async (req, res) => {
           }
         });
       }
+      console.log('🟢 [GOOGLE AUTH] No valid remembered device found, proceeding to OTP.');
     }
 
     const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
+    console.log('🟢 [GOOGLE AUTH] Clearing old OTPs for userId:', userId);
     await db.query('DELETE FROM user_otps WHERE user_id = ?', [userId]);
+
+    console.log('🟢 [GOOGLE AUTH] Inserting new OTP for userId:', userId);
     await db.query(
       'INSERT INTO user_otps (user_id, otp_code, expires_at) VALUES (?, ?, ?)',
       [userId, otpCode, expiresAt]
     );
 
+    console.log('🟢 [GOOGLE AUTH] Calling sendOtpEmail for:', email);
     await sendOtpEmail(email, otpCode);
+    console.log('✅ [GOOGLE AUTH] sendOtpEmail completed successfully for:', email);
 
     res.json({
       requiresOtp: true,
       userId: userId,
       message: 'Verification code sent to your email.'
     });
+    console.log('✅ [GOOGLE AUTH] Response sent, requiresOtp: true');
+    console.log('==================================================');
 
   } catch (err) {
+    console.error('🔴🔴🔴 [GOOGLE AUTH ERROR] 🔴🔴🔴');
+    console.error('Error name:', err.name);
+    console.error('Error message:', err.message);
+    console.error('Error code:', err.code);
+    console.error('Error stack:', err.stack);
+    console.error('Full error object:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
+    console.log('==================================================');
     res.status(500).json({ message: 'Google Authentication failed on server.', details: err.message });
   }
 });
@@ -532,5 +556,3 @@ const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
-
-
