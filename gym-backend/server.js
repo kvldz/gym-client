@@ -24,7 +24,7 @@ console.log('==================================================');
 // 1. CORS CONFIGURATION & PREFLIGHT HANDLING
 // ==========================================
 const corsOptions = {
-origin: ['http://localhost:5173', 'http://localhost:3000', 'https://precious-illumination-production-eb7a.up.railway.app'],
+origin: ['http://localhost:5173', 'http://localhost:3000', 'https://precious-illumination-production-eb7a.up.railway.app', 'https://gym-admin-production-6321.up.railway.app'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
