@@ -107,7 +107,7 @@ app.get('/', (req, res) => {
 // ==========================================
 app.get('/api/users', async (req, res) => {
   try {
-    const [users] = await db.query('SELECT user_id, full_name, email, phone, gender, address, created_at FROM users');
+    const [users] = await db.query('SELECT user_id, full_name, email, phone_number AS phone, gender, address, created_at FROM users');
     res.json(users);
   } catch (err) {
     console.error('❌ [GET /api/users] Error:', err.message);
