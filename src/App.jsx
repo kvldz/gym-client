@@ -51,12 +51,13 @@ const CATEGORIES_DATA = [
 ];
 
 const CUSTOMER_PICS = [
-  "https://randomuser.me/api/portraits/men/32.jpg",
-  "https://randomuser.me/api/portraits/women/44.jpg",
-  "https://randomuser.me/api/portraits/men/65.jpg",
-  "https://randomuser.me/api/portraits/women/68.jpg",
-  "https://randomuser.me/api/portraits/men/71.jpg",
-  "https://randomuser.me/api/portraits/women/75.jpg",
+  "/pics/ken.png",
+    "/pics/ken.png",
+  "/pics/ken.png",
+  "/pics/ken.png",
+  "/pics/ken.png",
+  "/pics/ken.png",
+
 ];
 
 // Helper to safely parse JSON strings from Database
