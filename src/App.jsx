@@ -73,7 +73,7 @@ const parseSafeJSON = (data, fallback) => {
 
 // 🎬 INTRO LOADER COMPONENT
 function IntroLoader({ onFinished, isDarkMode }) {
-  const companyName = "AllTime FITNESS";
+  const companyName = "ELEV8 GYM";
   
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -199,7 +199,7 @@ function GymCustomerApp() {
       full_description: p.full_description || p.description || "No full description available for this item.",
       description: p.description || p.full_description || "High performance gym equipment.",
       specs: parsedSpecs,
-      warranty: p.warranty || "Standard 1-Year AllTime Fitness Factory Warranty",
+      warranty: p.warranty || "Standard 1-Year ELEV8 GYM Factory Warranty",
       shipping_info: p.shipping_info || "Ships within 24-48 business hours with door-to-door delivery."
     };
   };
@@ -468,7 +468,7 @@ function GymCustomerApp() {
         <div className="max-w-7xl mx-auto grid md:grid-cols-4 gap-12 text-sm text-zinc-400">
             <div className="space-y-4">
                 <div style={{ backgroundColor: NEON_LIME }} className="text-black font-black text-lg px-2.5 py-1 rounded-lg flex items-center gap-1 inline-flex">
-                  <Dumbbell className="w-5 h-5 fill-black" /> AllTime Fitness
+                  <Dumbbell className="w-5 h-5 fill-black" /> ELEV8 GYM
                 </div>
                 <p className="text-xs">Your journey to peak fitness starts here. Access elite facilities, premium gear, and expert coaching.</p>
             </div>
@@ -484,7 +484,7 @@ function GymCustomerApp() {
             ))}
         </div>
         <div className="max-w-7xl mx-auto text-center text-xs text-zinc-600 mt-16 pt-8 border-t border-zinc-800">
-            &copy; {new Date().getFullYear()} AllTime Fitness. All rights reserved.
+            &copy; {new Date().getFullYear()}  ELEV8 GYM. All rights reserved.
         </div>
     </footer>
   );
@@ -549,7 +549,7 @@ function GymCustomerApp() {
             setSelectedSubcategory("All");
           }}>
             <div style={{ backgroundColor: NEON_LIME }} className="text-black font-black text-sm sm:text-lg px-2 sm:px-2.5 py-1 rounded-lg flex items-center gap-1 transition-transform group-hover:scale-105">
-              <Dumbbell className="w-4 h-4 sm:w-5 sm:h-5 fill-black" /> AllTime Fitness
+              <Dumbbell className="w-4 h-4 sm:w-5 sm:h-5 fill-black" />  ELEV8 GYM
             </div>
             {activeTab === "home" && <span className="font-extrabold text-xs sm:text-base tracking-wider hidden xs:inline-block text-white">FITNESS</span>}
           </div>
@@ -1189,7 +1189,7 @@ function GymCustomerApp() {
                       <ShieldCheck className="w-4 h-4" /> Warranty Policy
                     </h4>
                     <p className="text-xs text-zinc-300 mt-1">
-                      {selectedProduct.warranty || "Standard 1-Year AllTime Fitness Factory Warranty"}
+                      {selectedProduct.warranty || "Standard 1-Year ELEV8 GYM Factory Warranty"}
                     </p>
                   </div>
 
